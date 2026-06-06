@@ -1,29 +1,7 @@
--- 1. CRASH PROTECTION: Wait for the game to fully load before doing anything
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
-task.wait(5) -- Safe cushion time for character physics to settle down
-
--- Rejoin queue persistence (auto-runs on next server)
-local loader = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/vumrexe/roblox-loader/main/pixelbladeloader.lua"))()'
-
-if queue_on_teleport then
-    queue_on_teleport(loader)
-end
-
 local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
 
--- Automatically active on launch
-local isFarming = true
-local holdDuration = 0.5 
-
--- ALL YOUR COORDINATES (With Image Corrections)
+-- Coordinates array (with your image corrections preserved)
 local locations = {
     -- --- FIRST IMAGE COORDINATES ---
     Vector3.new(1018.21, 56.67, -209.44),
@@ -55,7 +33,7 @@ local locations = {
     Vector3.new(-661.62, 76.69, -910.18),
     Vector3.new(-713.68, 68.62, -871.95),
     Vector3.new(-1437.72, 54.85, -504.94),
-    Vector3.new(-1634.18, 83.59, -467.57), -- CORRECTED POINT FROM IMAGE 3
+    Vector3.new(-1634.18, 83.59, -467.57),
     Vector3.new(-1496.71, 57.37, -316.70),
     Vector3.new(-1434.27, 56.55, -177.59),
     Vector3.new(-1693.16, 62.49, -138.77),
@@ -100,14 +78,16 @@ local locations = {
     Vector3.new(-2541.88, 351.91, -3017.52)
 }
 
--- Proximity prompt identifier
+local isFarming = false
+local holdDuration = 0.5
+
+-- Locate proximity prompts nearby
 local function getPromptAtPosition(position)
     for _, desc in ipairs(workspace:GetDescendants()) do
         if desc:IsA("ProximityPrompt") then
             local parent = desc.Parent
             if parent and parent:IsA("BasePart") then
-                local distance = (parent.Position - position).Magnitude
-                if distance < 10 then 
+                if (parent.Position - position).Magnitude < 10 then 
                     return desc
                 end
             end
@@ -116,76 +96,97 @@ local function getPromptAtPosition(position)
     return nil
 end
 
--- Main automated loop execution
+-- Core Farm Sequence
 local function runFarmLoop()
     while isFarming do
         for i, targetPos in ipairs(locations) do
             if not isFarming then break end
             
-            if not rootPart or not rootPart.Parent then
-                character = player.Character or player.CharacterAdded:Wait()
-                rootPart = character:WaitForChild("HumanoidRootPart")
-            end
+            local character = player.Character or player.CharacterAdded:Wait()
+            local rootPart = character:WaitForChild("HumanoidRootPart", 5)
             
-            rootPart.CFrame = CFrame.new(targetPos) * CFrame.new(0, 3, 0)
-            task.wait(0.3) 
-            
-            if not isFarming then break end
-            
-            local prompt = getPromptAtPosition(targetPos)
-            if prompt then
-                prompt:InputHoldBegin()
-                task.wait(holdDuration)
-                prompt:InputHoldEnd()
-                task.wait(0.2)
+            if rootPart then
+                rootPart.CFrame = CFrame.new(targetPos) * CFrame.new(0, 3, 0)
+                task.wait(0.3) 
+                
+                if not isFarming then break end
+                
+                local prompt = getPromptAtPosition(targetPos)
+                if prompt then
+                    prompt:InputHoldBegin()
+                    task.wait(holdDuration)
+                    prompt:InputHoldEnd()
+                    task.wait(0.2)
+                end
             end
         end
         task.wait(1) 
     end
 end
 
--- Safe Server Hopper (filters out full servers completely)
-local function serverHop()
-    isFarming = false
-    print("[FARM] 2 minutes complete. Fetching empty server list...")
-    
-    local proxyUrl = "https://games.roproxy.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-    
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(game:HttpGet(proxyUrl))
-    end)
-    
-    if success and result and result.data then
-        local safeServers = {}
-        for _, server in ipairs(result.data) do
-            -- Buffer Check: Must leave at least 3 open slots to avoid GameFull kicks
-            if server.id ~= game.JobId and server.playing < (server.maxPlayers - 3) then
-                table.insert(safeServers, server)
-            end
-        end
-        
-        if #safeServers > 0 then
-            -- Randomly pick a safe server from the list so we don't follow other exploiters
-            local chosenServer = safeServers[math.random(1, #safeServers)]
-            print("[FARM] Found safe server with space. Teleporting...")
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, chosenServer.id, player)
-            return
-        end
-    end
-    
-    print("[FARM] Proxy list failed or no safe servers found. Using backup matchmaking...")
-    TeleportService:Teleport(game.PlaceId, player)
+-- --- MODERN SCREEN GUI SETUP ---
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Prevent duplicate UI instances if executed multiple times
+if playerGui:FindFirstChild("PixelBladeFarmGui") then
+    playerGui.PixelBladeFarmGui:Destroy()
 end
 
--- ANTI-KICK CORE: If a teleport fails, instantly find another server instead of disconnecting
-TeleportService.TeleportInitFailed:Connect(function(failedPlayer, teleportResult, errorMessage)
-    print("[FARM] Teleport failed: " .. tostring(errorMessage) .. ". Searching for a different server...")
-    task.wait(3)
-    serverHop()
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "PixelBladeFarmGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+-- Main Container Window
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 180, 0, 75)
+frame.Position = UDim2.new(0.05, 0, 0.15, 0)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = screenGui
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 8)
+frameCorner.Parent = frame
+
+-- Title Header text
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0.4, 0)
+title.Text = "Pixel Blade Farm"
+title.TextColor3 = Color3.fromRGB(240, 240, 240)
+title.BackgroundTransparency = 1
+title.TextSize = 13
+title.Font = Enum.Font.SourceSansBold
+title.Parent = frame
+
+-- Direct Interactive Toggle Button
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0.9, 0, 0.45, 0)
+toggleButton.Position = UDim2.new(0.05, 0, 0.45, 0)
+toggleButton.Text = "STATUS: OFF"
+toggleButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 14
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = frame
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 6)
+btnCorner.Parent = toggleButton
+
+-- GUI Button State Controller
+toggleButton.MouseButton1Click:Connect(function()
+    isFarming = not isFarming
+    
+    if isFarming then
+        toggleButton.Text = "STATUS: RUNNING"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(50, 160, 50)
+        task.spawn(runFarmLoop)
+    else
+        toggleButton.Text = "STATUS: OFF"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+    end
 end)
-
--- 2-Minute (120 seconds) Countdown to hop
-task.delay(120, serverHop)
-
--- Ignite loop instantly on run
-task.spawn(runFarmLoop)
