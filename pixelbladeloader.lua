@@ -13,6 +13,7 @@ end
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -22,7 +23,7 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 local isFarming = true
 local holdDuration = 0.5 
 
--- ALL YOUR COORDINATES
+-- ALL YOUR COORDINATES (With Image Corrections)
 local locations = {
     -- --- FIRST IMAGE COORDINATES ---
     Vector3.new(1018.21, 56.67, -209.44),
@@ -54,7 +55,7 @@ local locations = {
     Vector3.new(-661.62, 76.69, -910.18),
     Vector3.new(-713.68, 68.62, -871.95),
     Vector3.new(-1437.72, 54.85, -504.94),
-    Vector3.new(-1634.18, 83.59, -467.57),
+    Vector3.new(-1634.18, 83.59, -467.57), -- CORRECTED POINT FROM IMAGE 3
     Vector3.new(-1496.71, 57.37, -316.70),
     Vector3.new(-1434.27, 56.55, -177.59),
     Vector3.new(-1693.16, 62.49, -138.77),
@@ -143,12 +144,48 @@ local function runFarmLoop()
     end
 end
 
--- Simple, 100% stable matchmaking teleport
-task.delay(150, function()
+-- Safe Server Hopper (filters out full servers completely)
+local function serverHop()
     isFarming = false
-    print("[FARM] 2 minutes complete. Teleporting...")
+    print("[FARM] 2 minutes complete. Fetching empty server list...")
+    
+    local proxyUrl = "https://games.roproxy.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+    
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(proxyUrl))
+    end)
+    
+    if success and result and result.data then
+        local safeServers = {}
+        for _, server in ipairs(result.data) do
+            -- Buffer Check: Must leave at least 3 open slots to avoid GameFull kicks
+            if server.id ~= game.JobId and server.playing < (server.maxPlayers - 3) then
+                table.insert(safeServers, server)
+            end
+        end
+        
+        if #safeServers > 0 then
+            -- Randomly pick a safe server from the list so we don't follow other exploiters
+            local chosenServer = safeServers[math.random(1, #safeServers)]
+            print("[FARM] Found safe server with space. Teleporting...")
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, chosenServer.id, player)
+            return
+        end
+    end
+    
+    print("[FARM] Proxy list failed or no safe servers found. Using backup matchmaking...")
     TeleportService:Teleport(game.PlaceId, player)
+end
+
+-- ANTI-KICK CORE: If a teleport fails, instantly find another server instead of disconnecting
+TeleportService.TeleportInitFailed:Connect(function(failedPlayer, teleportResult, errorMessage)
+    print("[FARM] Teleport failed: " .. tostring(errorMessage) .. ". Searching for a different server...")
+    task.wait(3)
+    serverHop()
 end)
+
+-- 2-Minute (120 seconds) Countdown to hop
+task.delay(120, serverHop)
 
 -- Ignite loop instantly on run
 task.spawn(runFarmLoop)
