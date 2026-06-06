@@ -1,4 +1,4 @@
--- Rejoin queue persistence (auto-runs on next server)
+-- Server Hop queue persistence (auto-runs on next server)
 local loader = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/vumrexe/roblox-loader/main/pixelbladeloader.lua"))()'
 
 if queue_on_teleport then
@@ -7,6 +7,7 @@ end
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -120,14 +121,12 @@ local function runFarmLoop()
                 rootPart = character:WaitForChild("HumanoidRootPart")
             end
             
-            -- Teleport slightly above target
             rootPart.CFrame = CFrame.new(targetPos) * CFrame.new(0, 3, 0)
             task.wait(0.3) 
             
             if not isFarming then break end
             
             local prompt = getPromptAtPosition(targetPos)
-            
             if prompt then
                 prompt:InputHoldBegin()
                 task.wait(holdDuration)
@@ -139,12 +138,43 @@ local function runFarmLoop()
     end
 end
 
--- 2-Minute (120 seconds) Countdown to standard matchmaking teleport
-task.delay(150, function()
+-- Reliable Server Hopper (No bugs, direct API fallback)
+local function serverHop()
     isFarming = false
-    print("[FARM] 2 minutes complete. Matchmaking to a server...")
+    print("[FARM] 2 minutes complete. Finding a NEW server...")
+    
+    local success, result
+    
+    -- Try direct Roblox API first (supported by most executors natively)
+    success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+    end)
+    
+    -- Backup proxy check (if direct API is blocked by executor)
+    if not success or not result or not result.data then
+        success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet("https://games.roproxy.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        end)
+    end
+    
+    -- Process the server list and jump to a fresh room
+    if success and result and result.data then
+        for _, server in ipairs(result.data) do
+            if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                print("[FARM] Match found! Swapping servers...")
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, player)
+                return
+            end
+        end
+    end
+    
+    -- Absolute worst-case scenario fallback
+    print("[FARM] Failed to get server list. Using standard matchmaking...")
     TeleportService:Teleport(game.PlaceId, player)
-end)
+end
+
+-- 2-Minute (120 seconds) Countdown to hop
+task.delay(150, serverHop)
 
 -- Ignite loop instantly on run
 task.spawn(runFarmLoop)
