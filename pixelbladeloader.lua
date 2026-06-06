@@ -154,7 +154,7 @@ frameCorner.Parent = frame
 -- Title Header text
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0.4, 0)
-title.Text = "Pixel Blade Farm"
+title.Text = "Easter Bunny Farm"
 title.TextColor3 = Color3.fromRGB(240, 240, 240)
 title.BackgroundTransparency = 1
 title.TextSize = 13
