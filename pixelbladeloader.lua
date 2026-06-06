@@ -1,3 +1,4 @@
+-- Rejoin queue persistence (auto-runs on next server)
 local loader = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/vumrexe/roblox-loader/main/pixelbladeloader.lua"))()'
 
 if queue_on_teleport then
@@ -5,19 +6,19 @@ if queue_on_teleport then
 end
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
+local TeleportService = game:GetService("TeleportService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
--- State controller
-local isFarming = false
+-- Automatically active on launch
+local isFarming = true
+local holdDuration = 0.5 
 
--- ONLY THE NEW COORDiNATES FROM YOUR TWO IMAGES
+-- ALL YOUR COORDINATES
 local locations = {
-    -- --- FIRST IMAGE COORDiNATES ---
+    -- --- FIRST IMAGE COORDINATES ---
     Vector3.new(1018.21, 56.67, -209.44),
     Vector3.new(1071.09, 54.91, -209.44),
     Vector3.new(1052.93, 63.67, -146.07),
@@ -69,7 +70,7 @@ local locations = {
     Vector3.new(-834.00, 50.47, 882.60),
     Vector3.new(-650.62, 50.47, 800.69),
 
-    -- --- SECOND IMAGE COORDiNATES ---
+    -- --- SECOND IMAGE COORDINATES ---
     Vector3.new(-2621.20, 51.16, -2227.69),
     Vector3.new(-2482.85, 163.08, -2159.14),
     Vector3.new(-2421.59, 167.79, -2179.54),
@@ -92,9 +93,7 @@ local locations = {
     Vector3.new(-2541.88, 351.91, -3017.52)
 }
 
-local holdDuration = 0.5 
-
--- Original scanning function
+-- Proximity prompt identifier
 local function getPromptAtPosition(position)
     for _, desc in ipairs(workspace:GetDescendants()) do
         if desc:IsA("ProximityPrompt") then
@@ -110,67 +109,7 @@ local function getPromptAtPosition(position)
     return nil
 end
 
--- Screen GUI Creation
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "MovableFarmGui"
-if syn and syn.protect_gui then syn.protect_gui(screenGui) end 
-screenGui.Parent = CoreGui
-
--- Main Container Frame for Custom Dragging
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 160, 0, 50)
-mainFrame.Position = UDim2.new(0.03, 0, 0.4, 0)
-mainFrame.BackgroundTransparency = 1
-mainFrame.Active = true
-mainFrame.Parent = screenGui
-
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(1, 0, 1, 0)
-toggleButton.Position = UDim2.new(0, 0, 0, 0)
-toggleButton.BackgroundColor3 = Color3.fromRGB(230, 60, 60)
-toggleButton.Text = "Auto-Farm: OFF\n(Keybind: X)"
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.TextSize = 16
-toggleButton.BorderSizePixel = 2
-toggleButton.Parent = mainFrame
-
---- CUSTOM LUA MOUSE-DRAG SCRIPT ---
-local dragging, dragInput, dragStart, startPos
-
-local function update(input)
-    local delta = input.Position - dragStart
-    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-end
-
-mainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-mainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        update(input)
-    end
-end)
-------------------------------------
-
--- Core Farming Loop Function
+-- Main automated loop execution
 local function runFarmLoop()
     while isFarming do
         for i, targetPos in ipairs(locations) do
@@ -181,7 +120,7 @@ local function runFarmLoop()
                 rootPart = character:WaitForChild("HumanoidRootPart")
             end
             
-            -- Classic instant teleport (+3 studs high)
+            -- Teleport slightly above target
             rootPart.CFrame = CFrame.new(targetPos) * CFrame.new(0, 3, 0)
             task.wait(0.3) 
             
@@ -194,35 +133,25 @@ local function runFarmLoop()
                 task.wait(holdDuration)
                 prompt:InputHoldEnd()
                 task.wait(0.2)
-            else
-                print("No prompt found at location " .. i .. ", moving to next.")
             end
         end
-        
-        if isFarming then
-            task.wait(1) 
-        end
+        task.wait(1) 
     end
 end
 
--- Toggle controller
-local function toggleFarm()
-    isFarming = not isFarming
-    if isFarming then
-        toggleButton.BackgroundColor3 = Color3.fromRGB(60, 230, 60)
-        toggleButton.Text = "Auto-Farm: ON\n(Keybind: X)"
-        task.spawn(runFarmLoop)
+-- 2-Minute (120 seconds) Countdown to Server Rejoin
+task.delay(120, function()
+    isFarming = false
+    print("[FARM] 2 minutes complete. Triggering rejoin...")
+    
+    if #Players:GetPlayers() <= 1 then
+        -- Solo server fallback handling
+        TeleportService:Teleport(game.PlaceId, player)
     else
-        toggleButton.BackgroundColor3 = Color3.fromRGB(230, 60, 60)
-        toggleButton.Text = "Auto-Farm: OFF\n(Keybind: X)"
-    end
-end
-
-toggleButton.MouseButton1Click:Connect(toggleFarm)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.X then
-        toggleFarm()
+        -- Main rejoin handler to re-fetch identical server space
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
     end
 end)
+
+-- Ignite loop instantly on run
+task.spawn(runFarmLoop)
