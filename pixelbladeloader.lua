@@ -140,7 +140,7 @@ local function runFarmLoop()
 end
 
 -- 2-Minute (120 seconds) Countdown to Server Rejoin
-task.delay(120, function()
+task.delay(150, function()
     isFarming = false
     print("[FARM] 2 minutes complete. Triggering rejoin...")
     
