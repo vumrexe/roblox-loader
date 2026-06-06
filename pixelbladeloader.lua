@@ -1,3 +1,9 @@
+local loader = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/vumrexe/roblox-loader/main/pixelbladeloader.lua"))()'
+
+if queue_on_teleport then
+    queue_on_teleport(loader)
+end
+
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
